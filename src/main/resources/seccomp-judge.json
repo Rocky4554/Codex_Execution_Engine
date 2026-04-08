@@ -1,0 +1,57 @@
+{
+  "defaultAction": "SCMP_ACT_ALLOW",
+  "architectures": ["SCMP_ARCH_X86_64", "SCMP_ARCH_X86", "SCMP_ARCH_X32"],
+  "syscalls": [
+    {
+      "comment": "Block all network syscalls — belt-and-suspenders with --network=none",
+      "names": [
+        "socket",
+        "socketpair",
+        "bind",
+        "connect",
+        "listen",
+        "accept",
+        "accept4",
+        "sendto",
+        "recvfrom",
+        "sendmsg",
+        "recvmsg",
+        "sendmmsg",
+        "recvmmsg",
+        "setsockopt",
+        "getsockopt",
+        "shutdown"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "Block process tracing — prevents inspection of other processes",
+      "names": ["ptrace"],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "Block performance monitoring — can be abused for side-channel attacks",
+      "names": ["perf_event_open"],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "Block io_uring — large attack surface, not needed for code execution",
+      "names": [
+        "io_uring_setup",
+        "io_uring_enter",
+        "io_uring_register"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "Block user/mount namespace creation — prevents container escape",
+      "names": ["unshare"],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    }
+  ]
+}

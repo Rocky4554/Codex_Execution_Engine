@@ -5,21 +5,26 @@ import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.github.dockerjava.api.command.PullImageResultCallback;
 import com.github.dockerjava.api.exception.NotFoundException;
 import com.github.dockerjava.api.model.Bind;
+import com.github.dockerjava.api.model.Capability;
 import com.github.dockerjava.api.model.HostConfig;
 import com.github.dockerjava.api.model.Volume;
 import com.github.dockerjava.core.command.ExecStartResultCallback;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -52,6 +57,17 @@ public class DockerExecutor {
 
     @Value("${execution.default-memory-limit-mb:256}")
     private int defaultMemoryLimit;
+
+    /** Loaded once at startup from classpath:seccomp-judge.json */
+    private String seccompJson;
+
+    @PostConstruct
+    void loadSeccompProfile() throws IOException {
+        var resource = new ClassPathResource("seccomp-judge.json");
+        seccompJson = resource.getContentAsString(StandardCharsets.UTF_8)
+                              .replaceAll("\\s+", " ").trim();
+        log.info("Seccomp profile loaded ({} bytes)", seccompJson.length());
+    }
 
     /** Create a temp directory and write the source code file. */
     public Path prepareTempDirectory(String sourceCode, String fileName) throws IOException {
@@ -99,13 +115,23 @@ public class DockerExecutor {
         Future<String> future = executor.submit(() -> {
             HostConfig hostConfig = HostConfig.newHostConfig()
                     .withBinds(new Bind(workDir.toString(), new Volume("/workspace")))
+                    // ── Network ────────────────────────────────────────────
                     .withNetworkMode("none")
+                    // ── Resource limits ────────────────────────────────────
                     .withMemory((long) memoryLimitMb * 1024 * 1024)
                     .withMemorySwap((long) memoryLimitMb * 1024 * 1024)
-                    .withCpuQuota(50000L)
-                    .withPidsLimit(50L)
+                    .withCpuQuota(50000L)        // 50% of one core
+                    .withPidsLimit(50L)          // prevent fork bombs
+                    // ── Filesystem ─────────────────────────────────────────
                     .withReadonlyRootfs(true)
-                    .withSecurityOpts(List.of("no-new-privileges"))
+                    .withTmpFs(Map.of("/tmp", "rw,noexec,nosuid,size=64m"))
+                    // ── Capabilities ───────────────────────────────────────
+                    .withCapDrop(Capability.ALL)
+                    // ── Syscall filtering ──────────────────────────────────
+                    .withSecurityOpts(List.of(
+                            "no-new-privileges",
+                            "seccomp=" + seccompJson
+                    ))
                     .withAutoRemove(false);
 
             CreateContainerResponse container = dockerClient.createContainerCmd(dockerImage)
