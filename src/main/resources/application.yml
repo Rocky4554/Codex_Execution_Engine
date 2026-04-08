@@ -1,0 +1,55 @@
+spring:
+  application:
+    name: codex-executor-agent
+  main:
+    banner-mode: off
+
+server:
+  port: ${SERVER_PORT:8081}
+  shutdown: graceful
+  tomcat:
+    max-http-form-post-size: 1MB
+    connection-timeout: 120s
+
+# ── Execution / Docker ──────────────────────────────────────────
+execution:
+  docker:
+    host: ${EXECUTION_DOCKER_HOST:unix:///var/run/docker.sock}
+  temp-dir: ${EXECUTION_TEMP_DIR:/tmp/codex/submissions}
+  default-time-limit-ms: 5000
+  default-memory-limit-mb: 256
+
+# ── Executor agent specifics ───────────────────────────────────
+executor:
+  agent:
+    # Shared secret with the Render-side backend.
+    # MUST be set via env var. Empty value = agent rejects all execute calls.
+    token: ${EXECUTOR_AGENT_TOKEN:}
+    # Cap concurrent executions. On the 911MB EC2 box, keep this at 1.
+    # Raise after upgrading to t3.small (2GB RAM).
+    max-concurrent: ${EXECUTOR_AGENT_MAX_CONCURRENT:1}
+    # Build-time version (overridden in Docker build args)
+    version: ${EXECUTOR_AGENT_VERSION:dev}
+    janitor:
+      max-age-minutes: ${EXECUTOR_AGENT_JANITOR_MAX_AGE:60}
+
+# ── Actuator (only health, no metrics needed for v1) ──────────
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+
+# ── Logging ────────────────────────────────────────────────────
+logging:
+  level:
+    root: INFO
+    com.codex.agent: INFO
+    com.github.dockerjava: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"

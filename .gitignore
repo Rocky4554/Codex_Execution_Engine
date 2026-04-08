@@ -1,0 +1,12 @@
+target/
+*.class
+*.jar
+!app.jar
+.env
+.env.production
+*.log
+
+# IDE
+.idea/
+*.iml
+.vscode/

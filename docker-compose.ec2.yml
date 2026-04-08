@@ -1,0 +1,27 @@
+# EC2 deployment compose for Codex Execution Engine.
+# Place this file at ~/codex-execution/ on your EC2 instance.
+#
+# Usage:
+#   docker compose -f docker-compose.ec2.yml --env-file .env up -d --pull always
+
+services:
+  codex-executor-agent:
+    image: ghcr.io/rocky4554/codex_executor_agent:latest
+    container_name: codex-executor-agent
+    restart: always
+    ports:
+      - "127.0.0.1:8081:8081"        # Caddy terminates TLS externally
+    environment:
+      EXECUTOR_AGENT_TOKEN: ${EXECUTOR_AGENT_TOKEN}
+      EXECUTOR_AGENT_MAX_CONCURRENT: ${EXECUTOR_AGENT_MAX_CONCURRENT:-1}
+      EXECUTION_DOCKER_HOST: unix:///var/run/docker.sock
+      EXECUTION_TEMP_DIR: /tmp/codex/submissions
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp/codex:/tmp/codex
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
