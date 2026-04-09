@@ -3,42 +3,19 @@
   "architectures": ["SCMP_ARCH_X86_64", "SCMP_ARCH_X86", "SCMP_ARCH_X32"],
   "syscalls": [
     {
-      "comment": "Block all network syscalls — belt-and-suspenders with --network=none",
-      "names": [
-        "socket",
-        "socketpair",
-        "bind",
-        "connect",
-        "listen",
-        "accept",
-        "accept4",
-        "sendto",
-        "recvfrom",
-        "sendmsg",
-        "recvmsg",
-        "sendmmsg",
-        "recvmmsg",
-        "setsockopt",
-        "getsockopt",
-        "shutdown"
-      ],
-      "action": "SCMP_ACT_ERRNO",
-      "errnoRet": 1
-    },
-    {
-      "comment": "Block process tracing — prevents inspection of other processes",
+      "comment": "Block ptrace — prevents inspecting/modifying other processes",
       "names": ["ptrace"],
       "action": "SCMP_ACT_ERRNO",
       "errnoRet": 1
     },
     {
-      "comment": "Block performance monitoring — can be abused for side-channel attacks",
+      "comment": "Block perf_event_open — prevents side-channel timing attacks via hardware counters",
       "names": ["perf_event_open"],
       "action": "SCMP_ACT_ERRNO",
       "errnoRet": 1
     },
     {
-      "comment": "Block io_uring — large attack surface, not needed for code execution",
+      "comment": "Block io_uring — large kernel attack surface, not needed for code execution",
       "names": [
         "io_uring_setup",
         "io_uring_enter",
@@ -48,8 +25,14 @@
       "errnoRet": 1
     },
     {
-      "comment": "Block user/mount namespace creation — prevents container escape",
+      "comment": "Block user/mount namespace creation — prevents container escape attempts",
       "names": ["unshare"],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "comment": "Block kernel module loading",
+      "names": ["init_module", "finit_module", "delete_module"],
       "action": "SCMP_ACT_ERRNO",
       "errnoRet": 1
     }
