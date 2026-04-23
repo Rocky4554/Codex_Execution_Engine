@@ -10,7 +10,7 @@ services:
     container_name: codex-executor-agent
     restart: always
     ports:
-      - "127.0.0.1:8081:8081"        # Caddy terminates TLS externally
+      - "0.0.0.0:8081:8081"          # Public access (token-secured)
     environment:
       EXECUTOR_AGENT_TOKEN: ${EXECUTOR_AGENT_TOKEN}
       EXECUTOR_AGENT_MAX_CONCURRENT: ${EXECUTOR_AGENT_MAX_CONCURRENT:-1}

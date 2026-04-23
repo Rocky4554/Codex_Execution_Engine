@@ -6,3 +6,6 @@ FROM python:3.11-slim
 RUN python -m compileall -q /usr/lib/python3.11 2>/dev/null || true
 
 WORKDIR /workspace
+
+# Protect this image from being removed by codex-cleanup.sh's hourly prune.
+LABEL codex.keep=true

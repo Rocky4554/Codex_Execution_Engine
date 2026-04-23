@@ -11,3 +11,6 @@ RUN node -e " \
 " 2>/dev/null || true
 
 WORKDIR /workspace
+
+# Protect this image from being removed by codex-cleanup.sh's hourly prune.
+LABEL codex.keep=true

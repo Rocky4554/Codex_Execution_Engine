@@ -9,3 +9,6 @@ RUN java -Xshare:dump 2>/dev/null || true
 RUN javac --version > /dev/null 2>&1
 
 WORKDIR /workspace
+
+# Protect this image from being removed by codex-cleanup.sh's hourly prune.
+LABEL codex.keep=true
