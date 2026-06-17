@@ -64,7 +64,7 @@ if [ ! -f "$REPO_DIR/.env" ]; then
     echo "    .env missing — copy from .env.example and set EXECUTOR_AGENT_TOKEN, then re-run."
     exit 1
 fi
-sudo docker compose -f "$REPO_DIR/docker-compose.ec2.yml" --env-file "$REPO_DIR/.env" up -d --pull always
+sudo docker compose -f "$REPO_DIR/docker-compose.ec2.yml" --env-file "$REPO_DIR/.env" up -d --build
 sudo docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
 
 # ── 4. Cleanup scripts + cron ───────────────────────────────────

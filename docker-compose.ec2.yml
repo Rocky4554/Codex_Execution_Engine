@@ -2,11 +2,14 @@
 # Place this file at ~/codex-execution/ on your EC2 instance.
 #
 # Usage:
-#   docker compose -f docker-compose.ec2.yml --env-file .env up -d --pull always
+#   docker compose -f docker-compose.ec2.yml --env-file .env up -d --build
 
 services:
   codex-executor-agent:
-    image: ghcr.io/rocky4554/codex_executor_agent:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: codex-executor-agent:latest
     container_name: codex-executor-agent
     restart: always
     ports:
