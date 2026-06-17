@@ -33,9 +33,18 @@ echo
 
 # ── 1. Docker ────────────────────────────────────────────────────
 if ! command -v docker >/dev/null 2>&1; then
-    echo "[1/6] Installing Docker..."
+    echo "[1/6] Installing Docker (official repo)..."
     sudo apt-get update -qq
-    sudo apt-get install -y -qq docker.io docker-compose-plugin
+    sudo apt-get install -y -qq ca-certificates curl gnupg
+    sudo install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+        | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    sudo chmod a+r /etc/apt/keyrings/docker.gpg
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+        | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+    sudo apt-get update -qq
+    sudo apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
     sudo systemctl enable --now docker
     sudo usermod -aG docker "$USER"
     echo "    Docker installed. NOTE: re-login (or run 'newgrp docker') to use docker without sudo."
