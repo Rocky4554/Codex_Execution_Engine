@@ -118,8 +118,12 @@ public class DockerExecutor {
                     // ── Network ────────────────────────────────────────────
                     .withNetworkMode("none")
                     // ── Resource limits ────────────────────────────────────
-                    .withMemory((long) memoryLimitMb * 1024 * 1024)
-                    .withMemorySwap((long) memoryLimitMb * 1024 * 1024)
+                    // Use at least 512MB so cc1plus (g++) can compile heavy headers like
+                    // bits/stdc++.h without being OOM-killed. The problem's memoryLimitMb
+                    // is enforced at the run phase by the container's overall limit; in
+                    // practice the PCH means the compiler uses far less than 512MB.
+                    .withMemory((long) Math.max(512, memoryLimitMb) * 1024 * 1024)
+                    .withMemorySwap((long) Math.max(512, memoryLimitMb) * 1024 * 1024)
                     .withCpuQuota(50000L)        // 50% of one core
                     .withPidsLimit(50L)          // prevent fork bombs
                     // ── Filesystem ─────────────────────────────────────────
@@ -137,7 +141,7 @@ public class DockerExecutor {
             CreateContainerResponse container = dockerClient.createContainerCmd(dockerImage)
                     .withHostConfig(hostConfig)
                     .withWorkingDir("/workspace")
-                    .withCmd("sleep", "120")
+                    .withCmd("sleep", "600")
                     .exec();
 
             String containerId = container.getId();
