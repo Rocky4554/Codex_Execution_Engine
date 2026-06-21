@@ -104,6 +104,33 @@ chmod +x setup-host.sh
 
 ---
 
+## Updating EC2 After a Code Change
+
+When you push new code to GitHub and need to redeploy on EC2:
+
+```bash
+# SSH into EC2 first (from your local Windows machine)
+ssh -i C:\keys\code_execution_engine.pem ubuntu@3.110.161.110
+
+# On EC2 — pull latest + rebuild the Docker image + restart
+cd ~/codex-execution
+git pull
+sudo docker compose -f docker-compose.ec2.yml --env-file .env up -d --build
+```
+
+| Command | What it does |
+|---|---|
+| `git pull` | Downloads latest commits from GitHub |
+| `up -d --build` | Rebuilds the image from the updated Dockerfile/source, then restarts the container in the background |
+
+If `git pull` fails with "local changes would be overwritten":
+```bash
+git checkout -- <filename>   # discard local changes to that file
+git pull
+```
+
+---
+
 ## After Deployment — Verify It Works
 
 ### Check running containers

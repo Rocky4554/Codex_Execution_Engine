@@ -151,7 +151,7 @@ Creates container with:
 - **Bind mount:** `workDir ↔ /workspace` inside container
 - **Network isolation:** `network_mode: none` (no internet/LAN access)
 - **Resource limits:**
-  - Memory: `memoryLimitMb × 1024 × 1024` bytes (swap = same)
+  - Memory: `max(512 MB, memoryLimitMb)` — floor of 512 MB ensures the C++ compiler (`cc1plus`) is never OOM-killed during compilation; swap = same value (no swap allowed)
   - CPU quota: 50% of one core (`cpuQuota=50000`)
   - PIDs limit: 50 (prevents fork bombs)
 - **Filesystem restrictions:**
@@ -159,7 +159,7 @@ Creates container with:
   - `/tmp` tmpfs (64 MB, `noexec`, `nosuid`)
 - **Capability drop:** Drop ALL Linux capabilities
 - **Security options:** `no-new-privileges` + seccomp filter
-- Runs `sleep 120` (keeps container alive for `docker exec` commands)
+- Runs `sleep 600` (keeps container alive for up to 10 minutes for `docker exec` compile + run commands)
 - 60-second timeout wrapping the create call (guards against hung Docker daemon)
 
 #### 4. `compileInContainer()`
@@ -358,10 +358,12 @@ Multi-layered approach to prevent disk/memory bloat on tight EC2:
 | Decision | Rationale |
 |---|---|
 | One container per submission (not per test case) | Faster — avoids container startup cost for each test |
-| Container runs `sleep 120` | Stays alive for `docker exec` calls across all test cases |
+| Container runs `sleep 600` | Stays alive 10 minutes for `docker exec` calls; was `sleep 120` which killed mid-compile |
+| Memory floor `max(512, memoryLimitMb)` | `g++` with `bits/stdc++.h` needs ~300-500 MB; a 128 MB problem limit would OOM-kill the compiler |
+| PCH built with `-std=c++17` | Pre-compiles `bits/stdc++.h` so submissions compile in ~2s instead of 120s; compile command must also use `-std=c++17` |
 | Serial test case execution | Simpler, deterministic, predictable resource usage |
 | Fail-fast on first test failure | Remaining tests marked SKIPPED — avoids wasting resources |
-| Semaphore default = 1 | Prevents resource contention on tight EC2 t3.small/t3.micro |
+| Semaphore default = 1 | Prevents resource contention on tight EC2 t2.micro |
 | Idempotency cache | Prevents double-execution if backend retries on network error |
 | JVM heap `-Xmx192m` | Fits within ~400 MB total EC2 footprint alongside Docker daemon |
 | Input via bind-mount + shell redirect | Avoids stdin piping complexity with docker exec |
@@ -378,6 +380,6 @@ Multi-layered approach to prevent disk/memory bloat on tight EC2:
 | **Auth** | Bearer token (shared secret) |
 | **Concurrency** | Semaphore-gated (default 1 submission at a time) |
 | **Execution model** | One container per submission, serial test cases |
-| **Typical turnaround** | ~5–10 seconds end-to-end |
+| **Typical turnaround** | ~3–5 seconds end-to-end (with PCH; ~2s compile + ~1s run) |
 | **Cleanup** | Immediate `finally` + janitor task + cron scripts |
 | **Horizontal scaling** | Stateless — just run multiple EC2 instances |
