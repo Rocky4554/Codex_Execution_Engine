@@ -330,11 +330,12 @@ All tunables in `application.yml`, overridable via environment variables:
 - Restart policy: `always`
 
 ### `setup-host.sh` (one-shot EC2 bootstrap)
-1. Installs Docker
-2. Builds language sandbox images (labels them `codex.keep=true`)
-3. Starts executor agent via docker-compose
-4. Installs cleanup scripts + registers cron jobs
-5. Disables runaway `apt` timers (prevents disk lock deadlocks)
+1. Creates a 2 GB swapfile + `vm.swappiness=10` (prevents OOM on the 1 GB box; configurable via `SWAP_SIZE_GB`)
+2. Installs Docker
+3. Builds language sandbox images (labels them `codex.keep=true`)
+4. Starts executor agent via docker-compose
+5. Installs cleanup scripts + registers cron jobs
+6. Disables runaway `apt` timers (prevents disk lock deadlocks)
 
 ---
 

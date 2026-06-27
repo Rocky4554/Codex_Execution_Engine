@@ -69,15 +69,18 @@ chmod +x setup-host.sh docker/executors/build-all.sh codex-cleanup.sh codex-clea
 ./setup-host.sh
 ```
 One-shot setup script that does everything:
-1. Adds Docker's official apt repository
-2. Installs Docker CE + docker-compose-plugin
+1. Creates a 2 GB swapfile + sets `vm.swappiness=10` (prevents OOM on the 1 GB box)
+2. Adds Docker's official apt repository and installs Docker CE + docker-compose-plugin
 3. Builds the 4 language sandbox images (`codex-cpp`, `codex-java`, `codex-python`, `codex-javascript`)
 4. Starts the executor agent container on port `8081`
 5. Installs cleanup cron jobs (every 5 min light, every 1 hour heavy)
 6. Disables `unattended-upgrades` to prevent apt lock deadlocks
-7. Prints final disk and container state
+7. Prints final disk, memory, and container state
 
 Takes **5–10 minutes** on first run.
+
+> Swap size is configurable: `SWAP_SIZE_GB=4 ./setup-host.sh`. The step is
+> idempotent — if `/swapfile` is already active it is left untouched.
 
 ---
 
@@ -101,6 +104,39 @@ Pulls the latest changes from GitHub (origin/main). Fast-forwards the local bran
 chmod +x setup-host.sh
 ```
 `git checkout` restores file content but resets permissions. This re-adds the execute bit so the script can be run again.
+
+---
+
+## Add Swap to an Existing Box (manual)
+
+If a box was set up before swap was added to `setup-host.sh`, add it once by hand.
+Fixes OOM kills on the 1 GB instance and frees headroom for nginx/Grafana/Loki.
+
+```bash
+ssh -i C:\keys\code_execution_engine.pem ubuntu@3.110.161.110
+
+sudo fallocate -l 2G /swapfile                      # allocate a 2 GB file
+sudo chmod 600 /swapfile                            # owner-only (swapon requires this)
+sudo mkswap /swapfile                               # format as swap
+sudo swapon /swapfile                               # enable now
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab   # persist across reboot
+sudo sysctl vm.swappiness=10                        # prefer RAM, swap only under pressure
+echo 'vm.swappiness=10' | sudo tee -a /etc/sysctl.conf
+
+free -h          # verify: Swap row shows 2.0Gi
+swapon --show    # verify: lists /swapfile
+```
+
+| Command | What it does |
+|---|---|
+| `fallocate -l 2G /swapfile` | Reserves a 2 GB file on disk for swap |
+| `chmod 600` | Restricts to owner — `swapon` rejects world-readable swap files |
+| `mkswap` | Formats the file as swap space |
+| `swapon` | Activates the swap immediately (no reboot) |
+| `/etc/fstab` line | Re-enables the swapfile automatically after a reboot |
+| `vm.swappiness=10` | Low value → kernel uses RAM first, swap is a fallback |
+
+See `MEMORY_OPTIMIZATION.md` (root) for the full rationale and memory-savings breakdown.
 
 ---
 

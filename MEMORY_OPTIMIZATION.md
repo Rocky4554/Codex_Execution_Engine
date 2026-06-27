@@ -70,6 +70,53 @@ sudo crontab -e
 0 3 * * * docker-compose -f /home/ubuntu/Codex_code/docker-compose.prod.yml restart >> /var/log/codex-restart.log 2>&1
 ```
 
+### 4️⃣ 2 GB Swapfile ⭐ **SAFETY NET**
+
+The box has ~1 GB RAM and **no swap by default**. With zero swap the kernel
+OOM-kills a container the moment RAM is exhausted. A 2 GB swapfile gives a
+safety buffer so short memory spikes spill to disk instead of killing the
+executor agent — and provides the headroom needed to run light monitoring
+(nginx / Grafana / Loki) on the same box.
+
+> Automated: `setup-host.sh` now creates this swapfile as **step 1** (idempotent).
+> The manual commands below are for an existing box that hasn't run the updated script.
+
+**Create the swapfile:**
+```bash
+sudo fallocate -l 2G /swapfile        # allocate a 2 GB file
+sudo chmod 600 /swapfile              # owner-only (required by swapon)
+sudo mkswap /swapfile                 # format it as swap space
+sudo swapon /swapfile                 # enable it immediately
+```
+
+**Make it persist across reboots:**
+```bash
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+```
+
+**Prefer RAM, only swap under real pressure:**
+```bash
+sudo sysctl vm.swappiness=10
+echo 'vm.swappiness=10' | sudo tee -a /etc/sysctl.conf
+```
+
+**Verify:**
+```bash
+free -h        # Swap row should show 2.0Gi total
+swapon --show  # lists /swapfile, TYPE file, SIZE 2G
+```
+
+| Setting | Why |
+|---|---|
+| 2 GB size | ~2× RAM — enough buffer without wasting disk (you have 23 GB free) |
+| `chmod 600` | `swapon` refuses world-readable swap files |
+| `swappiness=10` | low value = use RAM first, swap is a fallback not a default |
+| `/etc/fstab` entry | re-enables swap automatically after a reboot |
+
+**Performance note:** swap is disk-backed, so heavy swapping is slower than RAM.
+It's a safety net, not a substitute for RAM — the JVM heap reductions above keep
+actual swap usage near zero in normal operation.
+
 ---
 
 ## Memory Savings Breakdown
