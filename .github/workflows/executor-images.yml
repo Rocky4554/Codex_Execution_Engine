@@ -1,0 +1,51 @@
+name: Rebuild sandbox executor images on EC2
+
+# The language sandbox images (codex-cpp, codex-python, codex-sql, …) are the
+# images user code actually runs inside. They are referenced BY NAME from the
+# backend's `languages` table (e.g. "codex-sql:latest"), so they must exist in
+# the EC2 Docker daemon's LOCAL image store — they are not pulled from a registry.
+#
+# They change rarely, so this is a separate workflow from the agent deploy:
+# a Dockerfile tweak here should not restart the agent, and an agent code change
+# should not spend minutes rebuilding sandboxes.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docker/executors/**'
+      - '.github/workflows/executor-images.yml'
+  workflow_dispatch: {}
+
+# Shares the deploy concurrency group so an image rebuild and an agent deploy
+# never run against the box at the same time.
+concurrency:
+  group: ec2-deploy
+  cancel-in-progress: false
+
+jobs:
+  rebuild:
+    name: Rebuild images on EC2
+    runs-on: ubuntu-latest
+    steps:
+      - name: Rebuild sandbox images over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script_stops: true
+          command_timeout: 30m      # the C++ precompiled-header build is slow on 1 vCPU
+          script: |
+            set -euo pipefail
+            cd ~/codex-execution
+
+            git fetch origin main
+            git reset --hard origin/main
+            chmod +x docker/executors/build-all.sh
+
+            # Docker's layer cache means unchanged images (e.g. the expensive C++ PCH)
+            # are near-instant; only the Dockerfile that actually changed is rebuilt.
+            ./docker/executors/build-all.sh
+
+            echo "--- sandbox images now present ---"
+            docker images | grep -E '^(codex-|REPOSITORY)'

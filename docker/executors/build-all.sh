@@ -27,6 +27,7 @@ build_one cpp
 build_one java
 build_one python
 build_one javascript
+build_one sql
 
 echo "All executor images built:"
 docker images | grep -E '^(codex-|REPOSITORY)'

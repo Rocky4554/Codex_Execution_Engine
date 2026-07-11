@@ -1,15 +1,23 @@
 # EC2 deployment compose for Codex Execution Engine.
 # Place this file at ~/codex-execution/ on your EC2 instance.
 #
-# Usage:
+# Normal path (CI/CD) — pull a prebuilt image built by GitHub Actions:
+#   IMAGE_TAG=<sha> docker compose -f docker-compose.ec2.yml --env-file .env pull
+#   IMAGE_TAG=<sha> docker compose -f docker-compose.ec2.yml --env-file .env up -d
+#
+# Fallback (manual) — build from source ON the box. Slow and memory-hungry on a
+# t2.micro; prefer the CI path. See dev_docs/CICD.md.
 #   docker compose -f docker-compose.ec2.yml --env-file .env up -d --build
 
 services:
   codex-executor-agent:
+    # `image` and `build` together: `pull` fetches the prebuilt image from GHCR,
+    # while `--build` still works locally and tags the result with the same name.
+    # IMAGE_TAG is the 7-char commit SHA, so every deploy is pinned and reversible.
+    image: ghcr.io/rocky4554/codex-executor-agent:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: Dockerfile
-    image: codex-executor-agent:latest
     container_name: codex-executor-agent
     restart: always
     ports:
