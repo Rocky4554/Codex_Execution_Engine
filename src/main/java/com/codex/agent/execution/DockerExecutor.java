@@ -19,12 +19,15 @@ import org.springframework.stereotype.Service;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -58,6 +61,15 @@ public class DockerExecutor {
     @Value("${execution.default-memory-limit-mb:256}")
     private int defaultMemoryLimit;
 
+    /** Per-stream cap on captured program output; protects the agent heap from print loops. */
+    static final int MAX_OUTPUT_BYTES = 64 * 1024;
+
+    /** CPU quota applied while test cases run (50% of one core, period 100ms). */
+    private static final int RUN_CPU_QUOTA = 50_000;
+
+    /** Images already confirmed present, so we skip the inspect call on every submission. */
+    private final Set<String> knownImages = ConcurrentHashMap.newKeySet();
+
     /** Loaded once at startup from classpath:seccomp-judge.json */
     private String seccompJson;
 
@@ -84,8 +96,12 @@ public class DockerExecutor {
      * Times out after 5 minutes to avoid blocking the worker forever.
      */
     public void ensureImageExists(String dockerImage) {
+        if (knownImages.contains(dockerImage)) {
+            return;
+        }
         try {
             dockerClient.inspectImageCmd(dockerImage).exec();
+            knownImages.add(dockerImage);
             log.debug("Image already present locally: {}", dockerImage);
         } catch (NotFoundException e) {
             log.info("Image not found locally, pulling: {} (this may take a few minutes)...", dockerImage);
@@ -93,6 +109,7 @@ public class DockerExecutor {
                 dockerClient.pullImageCmd(dockerImage)
                         .exec(new PullImageResultCallback())
                         .awaitCompletion(5, TimeUnit.MINUTES);
+                knownImages.add(dockerImage);
                 log.info("Successfully pulled image: {}", dockerImage);
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
@@ -124,7 +141,8 @@ public class DockerExecutor {
                     // practice the PCH means the compiler uses far less than 512MB.
                     .withMemory((long) Math.max(512, memoryLimitMb) * 1024 * 1024)
                     .withMemorySwap((long) Math.max(512, memoryLimitMb) * 1024 * 1024)
-                    .withCpuQuota(50000L)        // 50% of one core
+                    // No CPU quota yet: compilation runs at full speed, then
+                    // throttleForRun() applies the 50% quota before any test case.
                     .withPidsLimit(50L)          // prevent fork bombs
                     // ── Filesystem ─────────────────────────────────────────
                     .withReadonlyRootfs(true)
@@ -195,6 +213,17 @@ public class DockerExecutor {
     }
 
     /**
+     * Apply the run-phase CPU quota. Must succeed before any user code runs, so a
+     * failure here propagates and aborts the submission rather than running unthrottled.
+     */
+    public void throttleForRun(String containerId) {
+        dockerClient.updateContainerCmd(containerId)
+                .withCpuPeriod(100_000)
+                .withCpuQuota(RUN_CPU_QUOTA)
+                .exec();
+    }
+
+    /**
      * Run a single test case inside the container.
      * Writes input to /workspace/input.txt on the host (which is bind-mounted)
      * and pipes it into the program via shell redirect.
@@ -220,8 +249,8 @@ public class DockerExecutor {
 
     /** Execute a command inside a running container. */
     private ExecutionResult executeCommandInContainer(String containerId, String command, int timeLimitMs) throws Exception {
-        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
-        ByteArrayOutputStream stderr = new ByteArrayOutputStream();
+        BoundedOutputStream stdout = new BoundedOutputStream(MAX_OUTPUT_BYTES);
+        BoundedOutputStream stderr = new BoundedOutputStream(MAX_OUTPUT_BYTES);
 
         long startTime = System.currentTimeMillis();
 
@@ -251,23 +280,34 @@ public class DockerExecutor {
                     "Execution timed out after " + timeLimitMs + "ms",
                     -1,
                     executionTime,
-                    false);
+                    false,
+                    true);
         }
 
-        // Get exit code with retry for Docker delay
+        // The exit code is usually ready immediately; poll briefly (up to ~2s) if not.
         int exitCode = -1;
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < 100; i++) {
             Long exitCodeLong = dockerClient.inspectExecCmd(execId).exec().getExitCodeLong();
             if (exitCodeLong != null) {
                 exitCode = exitCodeLong.intValue();
                 break;
             }
             log.debug("Exit code not yet available, retrying... (attempt {})", i + 1);
-            Thread.sleep(500);
+            Thread.sleep(20);
         }
 
         if (exitCode == -1) {
             log.warn("Exit code still null after retries for exec {}", execId);
+        }
+
+        if (stdout.isTruncated()) {
+            // Treated as a runtime error: the program produced more output than any test expects.
+            return new ExecutionResult(
+                    stdout.toString(),
+                    "Output limit exceeded (" + MAX_OUTPUT_BYTES / 1024 + " KB)",
+                    exitCode == 0 ? 1 : exitCode,
+                    executionTime,
+                    false);
         }
 
         return new ExecutionResult(
@@ -276,6 +316,46 @@ public class DockerExecutor {
                 exitCode,
                 executionTime,
                 exitCode == 0);
+    }
+
+    /** Keeps the first {@code limit} bytes and silently discards the rest. */
+    static final class BoundedOutputStream extends OutputStream {
+        private final ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        private final int limit;
+        private boolean truncated;
+
+        BoundedOutputStream(int limit) {
+            this.limit = limit;
+        }
+
+        @Override
+        public synchronized void write(int b) {
+            if (buffer.size() < limit) {
+                buffer.write(b);
+            } else {
+                truncated = true;
+            }
+        }
+
+        @Override
+        public synchronized void write(byte[] b, int off, int len) {
+            int room = limit - buffer.size();
+            if (len > room) {
+                truncated = true;
+            }
+            if (room > 0) {
+                buffer.write(b, off, Math.min(len, room));
+            }
+        }
+
+        synchronized boolean isTruncated() {
+            return truncated;
+        }
+
+        @Override
+        public synchronized String toString() {
+            return buffer.toString(StandardCharsets.UTF_8);
+        }
     }
 
     /** Cleanup: stop + remove container and delete temp directory. */

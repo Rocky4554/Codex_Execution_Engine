@@ -83,7 +83,8 @@ public class ExecutionRunner {
 
                 log.warn("Compilation failed for submission {} ({}ms)", request.getSubmissionId(), compileTimeMs);
             } else {
-                // 4. Run each test case in the SAME container
+                // 4. Run each test case in the SAME container, at the run-phase CPU quota
+                dockerExecutor.throttleForRun(containerId);
                 finalStatus = "ACCEPTED";
 
                 int testIndex = 0;
@@ -140,9 +141,7 @@ public class ExecutionRunner {
                         if (exitCode == 137) {
                             testStatus = "MEMORY_LIMIT_EXCEEDED";
                             finalStatus = "MEMORY_LIMIT_EXCEEDED";
-                        } else if (exitCode == -1 && result.getStderr() != null
-                                && result.getStderr().contains("timed out")) {
-                            // executeCommandInContainer marks timeouts with exitCode=-1 + stderr "Execution timed out"
+                        } else if (result.isTimedOut()) {
                             testStatus = "TIME_LIMIT_EXCEEDED";
                             finalStatus = "TIME_LIMIT_EXCEEDED";
                         } else {

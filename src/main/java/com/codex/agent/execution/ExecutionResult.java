@@ -19,4 +19,10 @@ public class ExecutionResult {
     private Integer exitCode;
     private Long executionTimeMs;
     private boolean success;
+    /** True when the command was cut off by the time limit. */
+    private boolean timedOut;
+
+    public ExecutionResult(String stdout, String stderr, Integer exitCode, Long executionTimeMs, boolean success) {
+        this(stdout, stderr, exitCode, executionTimeMs, success, false);
+    }
 }
